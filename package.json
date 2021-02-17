@@ -11,6 +11,7 @@
     "react-scripts": "4.0.2",
     "tinycolor": "0.0.1",
     "tinycolor2": "^1.4.2",
+    "uuid": "^8.3.2",
     "web-vitals": "^1.1.0"
   },
   "scripts": {

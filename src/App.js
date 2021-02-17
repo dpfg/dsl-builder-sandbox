@@ -2,6 +2,8 @@ import logo from "./logo.svg";
 import "./App.css";
 import tinycolor from "tinycolor2";
 import { base, charts, showcase, saturated } from "./input.js";
+import { v4 as uuidv4 } from "uuid";
+import { useState } from "react";
 
 function distance(c1, c2) {
   const c1hsl = c1.toHsl();
@@ -19,7 +21,7 @@ function distance(c1, c2) {
   return Math.sqrt(d);
 }
 
-function findMatches(color) {
+function findSimilar(color) {
   return showcase.filter((e) => {
     const sc = tinycolor(e.color);
     return distance(color, sc) < 1;
@@ -32,9 +34,9 @@ function newScale(color, name) {
 
   const sourceLightness = sourceColorHSL.l; // 8 * Math.round((sourceColorHSL.l * 100) / 8);
 
-  const scale = [];
+  const blocks = [];
 
-  for (let step = 10; step < 100; step += 10) {
+  for (let step = 15; step < 100; step += 10) {
     const lightness =
       Math.round(sourceLightness + (step - sourceLightness)) / 100;
 
@@ -44,58 +46,130 @@ function newScale(color, name) {
       l: lightness,
     });
 
-    scale.push({
+    blocks.push({
       name: `${name}-${Math.round(lightness * 100)}`,
       color: blockColor,
       isSource: distance(blockColor, sourceColor) < 0.05,
       sourceColor: sourceColor,
-      matches: findMatches(blockColor),
+      matches: findSimilar(blockColor),
     });
   }
 
-  return scale;
+  return {
+    uid: uuidv4(),
+    blocks: blocks,
+    source: sourceColor,
+  };
 }
 
-class DesignSystemBuilder {
-  constructor(baseColors) {
-    this.baseColors = baseColors;
-    this.scales = baseColors.map((color) => newScale(color, "ex"));
-  }
+function newDesignSystem(baseColors) {
+  let scales = baseColors.map((color) => newScale(color, "cname"));
+
+  // const scalesToRemove = [];
+  // for (const scale of scales) {
+  //   if (scalesToRemove.includes(scale.uid)) {
+  //     continue;
+  //   }
+
+  //   let similarScales = scales.filter((s) => {
+  //     return distance(s.blocks[0].color, scale.blocks[0].color) < 10;
+  //   });
+
+  //   similarScales.sort(
+  //     (s1, s2) =>
+  //       s1.blocks.reduce(
+  //         (matched, block) => matched + block.matches.length,
+  //         0
+  //       ) -
+  //       s2.blocks.reduce((matched, block) => matched + block.matches.length, 0)
+  //   );
+
+  //   similarScales = similarScales.reverse();
+  //   similarScales.pop();
+  //   scalesToRemove.push(...similarScales.map((s) => s.uid));
+  // }
+
+  // scales = scales.filter((s) => !scalesToRemove.includes(s.uid));
+
+  const matched = scales
+    .map((scale) => scale.blocks)
+    .flatMap((blocks) => blocks.flatMap((block) => block.matches))
+    .filter(onlyUnique);
+
+  const notMatched = showcase.filter((e) => !matched.includes(e));
+
+  return {
+    scales: scales,
+    notMatched: {
+      count: notMatched.length,
+      elements: notMatched,
+    },
+    matched: {
+      count: matched.length,
+      elements: matched,
+    },
+  };
 }
 
-function ColorScale({ color, name }) {
-  const scale = newScale(color, name);
+function ColorScale({ scale, onBlockSelected }) {
+  // const scale = newScale(color, name);
 
   const renderBlock = (block) => {
     const color = block.color;
 
     return (
       <div
+        onClick={() => onBlockSelected(block)}
         key={color.toHex()}
         style={{
           color: color.isLight() ? "#212121" : "#ededed",
           backgroundColor: `${color.toHexString()}`,
-          width: "150px",
+          width: "170px",
           padding: "8px",
+          display: "flex",
+          justifyContent: "space-between",
         }}
       >
-        {color.toHexString()} <br />
-        {block.name}
-        <br />
-        {block.matches.map((c) => (
-          <div>{c.name}</div>
-        ))}
-        <br />
-        {block.isSource ? "origin:" + block.sourceColor.toHexString() : ""}
+        <div>{block.name}</div>
+        <div>{color.toHexString()}</div>
       </div>
     );
   };
 
-  return <div style={{ margin: "2px" }}>{scale.map(renderBlock)}</div>;
+  return (
+    <div>
+      <div
+        style={{
+          color: scale.source.isLight() ? "#212121" : "#ededed",
+          backgroundColor: scale.source.toHexString(),
+          width: "170px",
+          padding: "8px",
+          marginBottom: "5px",
+        }}
+      >
+        {scale.source.toHexString()}
+      </div>
+      <div style={{ margin: "2px" }}>{scale.blocks.map(renderBlock)}</div>{" "}
+    </div>
+  );
 }
 
+function onlyUnique(value, index, self) {
+  return self.indexOf(value) === index;
+}
+
+const extra = [
+  "#FF050F",
+  "#FFFCCC",
+  "#E1F0DB",
+  "#4E6B61",
+  "#F5F7FB",
+  "#DBE4F0",
+  "#3EBEDE",
+];
+
 function App() {
-  let colors = [...base, ...charts, ...saturated];
+  let colors = showcase.map((e) => e.color).filter(onlyUnique);
 
   colors = colors.sort((a, b) => {
     let ca = tinycolor(a);
@@ -103,12 +177,36 @@ function App() {
     return ca.toHsl().h - cb.toHsl().h;
   });
 
+  const ds = newDesignSystem(colors);
+  console.log(ds);
+
+  console.log(distance(tinycolor("#ffecb3"), tinycolor("#ffe0b2")));
+
+  const [selectedBlock, handleSelectBlock] = useState();
+
+  const renderSelectedBlock = () => {
+    if (!selectedBlock) {
+      return null;
+    }
+
+    return (
+      <div>
+        {selectedBlock.matches.map((m) => (
+          <div>{m.name}</div>
+        ))}
+      </div>
+    );
+  };
+
   return (
-    <div style={{ flexDirection: "row", display: "flex" }}>
-      {colors.map((c) => (
-        <ColorScale color={c} name="blue" />
-      ))}
-    </div>
+    <>
+      <div style={{ minHeight: "200px" }}>{renderSelectedBlock()}</div>
+      <div style={{ flexDirection: "row", display: "flex" }}>
+        {ds.scales.map((scale) => (
+          <ColorScale scale={scale} onBlockSelected={handleSelectBlock} />
+        ))}
+      </div>
+    </>
   );
 }
 
